@@ -14,11 +14,23 @@
            box-shadow:0 0 40px rgba(255,180,80,0.15); border-radius:6px; touch-action:none; }
   #errbar { position:fixed; left:0; top:0; width:100%; background:#c00; color:#fff;
     font-size:12px; padding:4px 8px; display:none; z-index:99; word-break:break-all; }
+  /* v05: オンラインランキング（タイトル/リザルトのときだけ出す） */
+  #rankbar { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(6px + env(safe-area-inset-bottom));
+    z-index:50; display:none; gap:8px; }
+  #rankbar button, #rankbar a { background:rgba(24,18,40,0.88); color:#ffd9a8; border:1px solid #7a5a3a;
+    border-radius:12px; padding:8px 15px; font-size:13px; font-family:inherit; cursor:pointer;
+    text-decoration:none; touch-action:manipulation; }
+  #rankbar button:active, #rankbar a:active { background:rgba(90,60,30,0.95); transform:scale(.96); }
+  #rankbar button:disabled { opacity:.7; }
 </style>
 </head>
 <body>
 <div id="errbar"></div>
 <canvas id="c" width="480" height="800"></canvas>
+<div id="rankbar">
+  <button id="btnRank">🏆 ランキングに登録</button>
+  <a href="https://helmetto2-prog.github.io/ranking-hiroba/" target="_blank" rel="noopener">🌍 広場</a>
+</div>
 <script>
 'use strict';
 /* =========================================================================
@@ -740,7 +752,7 @@ function loop(t){ const dt=lastT?Math.min(50,t-lastT):16; lastT=t;
       if(G.finale<=0) finishToOver();
     } else update(dt);
   }
-  FW.update(dt); render(); requestAnimationFrame(loop);
+  FW.update(dt); render(); syncRankbar(); requestAnimationFrame(loop);
 }
 
 // ---- 入力 ----------------------------------------------------------------------
@@ -788,6 +800,51 @@ function ptrUp(e){ const ln=ptrLane[e.pointerId]; delete ptrLane[e.pointerId];
   if(ln!==undefined) release(ln); }
 C.addEventListener('pointerup', ptrUp);
 C.addEventListener('pointercancel', ptrUp);
+
+/* ==== v05: オンラインランキング（ゲームランキング台帳GAS API・ランキング広場と共通） ==== */
+const RANK_API='https://script.google.com/macros/s/AKfycbz3yJMoui8-HX0iec4dLgW-Wk2nwBxa8t86CmGiuU9-PqqjG8PVb6emUodSweBZfID0Mw/exec';
+const RANK_GAME='花火番長';
+const rankbarEl=document.getElementById('rankbar'), btnRankEl=document.getElementById('btnRank');
+function rankName(){
+  let n=''; try{ n=localStorage.getItem('zunda_rank_name')||''; }catch(e){}
+  if(!n){
+    n=(prompt('ランキングに のせる名前（12文字まで）','')||'').slice(0,12).trim();
+    if(n){ try{ localStorage.setItem('zunda_rank_name',n); }catch(e){} }
+  }
+  return n;
+}
+// タイトル＝自己ベストを、リザルト＝その回のスコアを送る
+function rankScore(){
+  if(state==='over' && G) return { score:G.score, extra:((G.rank&&G.rank.name)||'見習い')+(G.cleared?'・完走':'') };
+  return { score:Store.get(), extra:'自己ベスト' };
+}
+async function submitRank(btn){
+  const s=rankScore();
+  if(!s.score){ btn.textContent='まず一度あそんでね'; setTimeout(()=>{btn.textContent='🏆 ランキングに登録';},1800); return; }
+  const n=rankName(); if(!n) return;
+  btn.disabled=true; btn.textContent='送信中…';
+  try{
+    const fd=new URLSearchParams();
+    fd.append('action','submit'); fd.append('game',RANK_GAME);
+    fd.append('name',n); fd.append('score',String(Math.round(s.score))); fd.append('extra',s.extra);
+    const res=await fetch(RANK_API,{method:'POST',body:fd});
+    const d=await res.json();
+    if(!d.ok) throw 0;
+    btn.textContent='✅ 登録完了！ 現在 '+d.rank+'位';
+  }catch(e){
+    btn.disabled=false; btn.textContent='送信失敗…もう一度';
+  }
+}
+btnRankEl.addEventListener('click', e=>{ e.stopPropagation(); submitRank(e.currentTarget); });
+// プレイ中は隠す（打ち上げの邪魔をしない）。画面が変わったらボタン文言を戻す
+let rankbarShown=null;
+function syncRankbar(){
+  const show=(state==='title'||state==='over');
+  if(show===rankbarShown) return;
+  rankbarShown=show;
+  rankbarEl.style.display = show?'flex':'none';
+  if(show){ btnRankEl.disabled=false; btnRankEl.textContent='🏆 ランキングに登録'; }
+}
 
 // ---- 開始 ----------------------------------------------------------------------
 function startGame(){ FW.clear(); Music1.stop(); Music2.stop(); newGame(); state='play'; }
