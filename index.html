@@ -41,6 +41,8 @@
         VOICEVOXボイス(ずんだもん たまや〜！/めたん かぎや〜！)
    v04: 二部構成 = 第一部ノリノリ(128拍)→大スターマインで区切り→
         第二部『夜の打ち上げ』(Suno新曲・夜の踊り子風4つ打ちダンスロック)
+   v05: 最新花火図鑑 = 八重芯変化菊・千輪菊・椰子・蜂・冠菊・時差式ストロボ・
+        変色牡丹（色変化/多重リング/遅延千輪/ふらつき蜂/点滅を粒子エンジンに実装）
    ========================================================================= */
 window.onerror = function(msg, src, line){ const b=document.getElementById('errbar');
   b.style.display='block'; b.textContent='ERR: '+msg+' (line '+line+')'; };
@@ -149,7 +151,39 @@ const VO=(function(){
 
 // ---- 花火エンジン（加算合成パーティクル） -----------------------------------
 const FW = (function(){
-  let parts=[], shake=0;
+  let parts=[], pend=[], shake=0;   // pend=遅延開花（千輪菊など）
+  function ring(x,y,spd,col,col2,n,opts){  // 1リング分の粒子
+    opts=opts||{};
+    for(let i=0;i<n;i++){ const a=(i/n)*TAU+Math.random()*0.05;
+      const s=spd*(0.92+Math.random()*0.16);
+      parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,col,col2:col2||null,life:0,
+        dur:(opts.dur||1.1)+Math.random()*0.3, g:(opts.g!==undefined?opts.g:0.03),
+        drag:(opts.drag||0.985), r:(opts.r||2.4), tr:(opts.tr!==false),
+        blink:(opts.blink||false), wob:(opts.wob||0)}); }
+  }
+  // 最新花火（実在の競技玉を再現）: type × size(1..3)
+  function modern(x,y,type,size){
+    const S=0.7+size*0.35;
+    switch(type){
+      case 'kiku':   ring(x,y,2.4*S,'#ffd24a','#ff7a3c',40+size*12,{}); break;               // 大輪菊
+      case 'botan':  ring(x,y,2.2*S,rngPick(['#ff9de2','#5ad0ff','#b48aff','#aef7c3']),null,34+size*12,{tr:false,r:3}); break; // 変色牡丹(パステル)
+      case 'henka':  ring(x,y,2.3*S,'#5ad0ff','#ffd24a',42+size*12,{});                       // 変化菊(青→金)
+                     ring(x,y,1.0*S,'#ffffff',null,16,{tr:false}); break;
+      case 'yaeshin':ring(x,y,2.6*S,'#ff5a5a','#ffd24a',46,{});                               // 八重芯(三重リング)
+                     ring(x,y,1.7*S,'#5ad0ff','#b48aff',34,{});
+                     ring(x,y,0.85*S,'#ffffff','#ffe9a0',20,{tr:false}); break;
+      case 'palm':   ring(x,y,2.2*S,'#ffb84a',null,12,{r:4.5,g:0.05,dur:1.5});                // 椰子(太い金腕)
+                     ring(x,y,0.8*S,'#fff0c0',null,10,{tr:false}); break;
+      case 'hachi':  ring(x,y,1.6*S,'#d8ff5a','#ffd24a',26,{wob:0.55,g:0.005,dur:1.35,r:1.8}); break; // 蜂(ふらつき)
+      case 'kamuro': ring(x,y,2.0*S,'#ffe9a0','#c8f7ff',46,{g:0.065,drag:0.976,dur:2.6,r:1.7}); break; // 冠菊(長く垂れる)
+      case 'strobe': ring(x,y,2.2*S,'#ffffff','#ffd24a',40,{blink:true,tr:false,r:2.6,dur:1.6}); break; // 時差式(点滅)
+      case 'senrin': ring(x,y,1.2*S,'#ffffff',null,10,{tr:false,dur:0.4});                    // 千輪菊(遅れて一斉開花)
+        for(let i=0;i<8+size*2;i++){ const a=Math.random()*TAU, rr=(30+Math.random()*70)*S;
+          pend.push({t:380+Math.random()*380, x:x+Math.cos(a)*rr, y:y+Math.sin(a)*rr*0.7}); }
+        break;
+    }
+  }
+  const MODERN_ALL=['kiku','botan','henka','yaeshin','palm','hachi','kamuro','strobe','senrin'];
   const PALS = [
     ['#ff5a5a','#ffd24a'], ['#5ad0ff','#b48aff'], ['#7dff8a','#fff7ae'],
     ['#ff9de2','#ffe08a'], ['#ffd24a','#ff7a3c'], ['#a0c4ff','#ffffff'],
@@ -192,24 +226,34 @@ const FW = (function(){
     for(let i=0;i<3;i++) parts.push({x:x+(Math.random()-0.5)*26,y,vx:(Math.random()-0.5)*0.4,
       vy:0.6+Math.random()*1.2,col:'#ffe9a0',life:0,dur:0.7+Math.random()*0.4,g:0.03,drag:0.99,r:1.6,tr:true}); }
   return {
-    blossom, spark, shape, willow, drip,
+    blossom, spark, shape, willow, drip, modern, MODERN_ALL,
     shake(a){ shake=Math.max(shake,a); },
     update(dt){ const f=dt/16;
       for(const p of parts){ p.life+=dt/1000; p.px=p.x; p.py=p.y;
+        if(p.wob){ const ang=(Math.random()-0.5)*p.wob*f, c=Math.cos(ang), s=Math.sin(ang);
+          const nvx=p.vx*c-p.vy*s, nvy=p.vx*s+p.vy*c; p.vx=nvx; p.vy=nvy; }
         p.x+=p.vx*f; p.y+=p.vy*f; p.vy+=p.g*f; p.vx*=Math.pow(p.drag,f); p.vy*=Math.pow(p.drag,f); }
-      parts=parts.filter(p=>p.life<p.dur); shake=Math.max(0,shake-dt/16); },
+      parts=parts.filter(p=>p.life<p.dur); shake=Math.max(0,shake-dt/16);
+      for(const q of pend){ q.t-=dt;
+        if(q.t<=0) ring(q.x,q.y,1.0,'#ffd24a','#ff9de2',14,{tr:false,r:2,dur:0.7}); }
+      pend=pend.filter(q=>q.t>0); },
     preDraw(){ if(shake>0){ ctx.save(); ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake); } },
     endShake(){ if(shake>0) ctx.restore(); },
     draw(){ ctx.save(); ctx.globalCompositeOperation='lighter';
       for(const p of parts){ const a=Math.max(0,1-p.life/p.dur); ctx.globalAlpha=a;
-        ctx.strokeStyle=p.col; ctx.fillStyle=p.col;
+        if(p.blink && (((p.life*1000/80)|0)%2)) continue;                    // 時差式の点滅
+        const col = (p.col2 && p.life>p.dur*0.45) ? p.col2 : p.col;          // 変化菊の色替わり
+        ctx.strokeStyle=col; ctx.fillStyle=col;
         if(p.tr && p.px!==undefined){ ctx.lineWidth=p.r; ctx.beginPath();
           ctx.moveTo(p.px-(p.x-p.px)*2.2, p.py-(p.y-p.py)*2.2); ctx.lineTo(p.x,p.y); ctx.stroke(); }
         else { ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,TAU); ctx.fill(); } }
       ctx.restore(); },
-    clear(){ parts=[]; shake=0; },
+    clear(){ parts=[]; pend=[]; shake=0; },
   };
 })();
+// 花火名（ポップアップ表示用）
+const FW_NAME = { kiku:'大輪菊', botan:'変色牡丹', henka:'変化菊', yaeshin:'八重芯',
+  palm:'椰子', hachi:'蜂花火', kamuro:'大冠菊', strobe:'時差式キラ', senrin:'千輪菊' };
 
 // ---- ハイスコア --------------------------------------------------------------
 const Store = {
@@ -309,10 +353,15 @@ function tap(lane){
     G.counts.perfect++; G.combo++;
     G.score+=noteScore(big?900:300);
     if(hold){ FW.blossom(x,y,2); SFX.burst(2); popup(lane,'長玉点火！','#b8ffd0',true); addFever(8); }
-    else if(big){ FW.blossom(x,y,3,4); FW.shape(x,y,'star',1.5,'#ffd24a'); FW.shake(9); SFX.burst(4);
-      popup(lane,'特大 星型大輪！！','#ffd24a',true); addFever(14);
+    else if(big){ const t8=Math.random()<0.5?'yaeshin':'senrin';
+      FW.modern(x,y,t8,3); if(t8==='yaeshin') FW.shape(x,y,'star',1.2,'#ffd24a');
+      FW.shake(9); SFX.burst(4);
+      popup(lane,'特大 '+FW_NAME[t8]+'！！','#ffd24a',true); addFever(14);
       VO.say(rngPick(['tamaya','kagiya'])); }
-    else { FW.blossom(x,y,3); FW.shake(5); SFX.burst(3); popup(lane,'大輪！','#ffb46a',true); addFever(8); }
+    else { const ty = G.combo<8 ? rngPick(['kiku','botan'])
+                    : rngPick(['kiku','botan','henka','palm','hachi','strobe']);
+      FW.modern(x,y,ty,2); FW.shake(5); SFX.burst(3);
+      popup(lane,FW_NAME[ty]+'！','#ffb46a',true); addFever(8); }
     if(G.combo%10===0) shout();
   } else if(bestD<=JUDGE.good){
     G.counts.good++; G.combo++;
@@ -353,8 +402,8 @@ function completeHold(n){
   const x=LANE_X[n.lane], y=BURST_Y[n.lane];
   G.combo++; G.maxCombo=Math.max(G.maxCombo,G.combo);
   G.score+=noteScore(400);
-  FW.willow(x,y); FW.blossom(x,y,2); FW.shake(7); SFX.burst(3);
-  popup(n.lane,'しだれ柳！お見事！','#ffe9a0',true); addFever(10);
+  FW.modern(x,y,'kamuro',3); FW.shake(7); SFX.burst(3);
+  popup(n.lane,'大冠菊！お見事！','#ffe9a0',true); addFever(10);
 }
 function addFever(v){
   if(G.feverT>0) return;
@@ -380,7 +429,7 @@ function update(dt){
   if(G.interT>0){
     G.interT-=dt;
     if((G.time/240|0)!==((G.time-dt)/240|0)){
-      FW.blossom(40+Math.random()*(W-80), 90+Math.random()*260, 2+randi(3)); SFX.burst(1+randi(2)); }
+      FW.modern(40+Math.random()*(W-80), 90+Math.random()*260, rngPick(FW.MODERN_ALL), 2+randi(2)); SFX.burst(1+randi(2)); }
     if(G.interT<=0) startPart2();
     return;
   }
@@ -428,8 +477,8 @@ function update(dt){
     if(n.t+n.dur < G.songTime){ n.done=true; n.hit=true; const taps=n.taps||0;
       const x=LANE_X[n.lane], y=BURST_Y[n.lane];
       if(taps>=6){ G.counts.perfect++; G.combo++; G.score+=noteScore(400);
-        FW.blossom(x,y,3); FW.shape(x,y,'star',1.3,'#ff9de2'); FW.shake(8); SFX.burst(4);
-        popup(n.lane,'スターマイン成功！！','#ffd24a',true); addFever(12); VO.say('tamaya'); }
+        FW.modern(x,y,'senrin',3); FW.shape(x,y,'star',1.3,'#ff9de2'); FW.shake(8); SFX.burst(4);
+        popup(n.lane,'千輪菊スターマイン！！','#ffd24a',true); addFever(12); VO.say('tamaya'); }
       else if(taps>=3){ G.counts.good++; G.combo++; G.score+=noteScore(150);
         FW.blossom(x,y,2); SFX.burst(2); popup(n.lane,'まずまず','#7ec8ff',false); addFever(5); }
       else { G.counts.bad++; G.combo=0; popup(n.lane,'不完全燃焼…','#9aa3b5',false); SFX.dud(); }
@@ -438,7 +487,7 @@ function update(dt){
   // フィーバー: 自動追い花火＆ミドリウス
   if(G.feverT>0){ G.feverT-=dt;
     if((G.time/300|0)!==((G.time-dt)/300|0)){
-      FW.blossom(40+Math.random()*(W-80), 120+Math.random()*180, 1+randi(2)); SFX.burst(1); }
+      FW.modern(40+Math.random()*(W-80), 120+Math.random()*180, rngPick(FW.MODERN_ALL), 1); SFX.burst(1); }
   }
   if(G.midori){ const m=G.midori; m.t+=dt; m.x+=dt*0.22;
     FW.spark(m.x-16,m.y+4,'#7dff8a',2,1.2);
@@ -693,7 +742,7 @@ function overlay(title,col,sub){ ctx.fillStyle='rgba(0,0,0,0.68)'; ctx.fillRect(
 function renderTitle(){
   // タイトルの見本花火
   if((clock()/1400|0)!==renderTitle._fw){ renderTitle._fw=clock()/1400|0;
-    FW.blossom(90+Math.random()*300, 130+Math.random()*140, 2+randi(2)); }
+    FW.modern(90+Math.random()*300, 130+Math.random()*140, rngPick(FW.MODERN_ALL), 1+randi(2)); }
   FW.draw();
   ctx.textAlign='center';
   ctx.fillStyle='#ffd24a'; ctx.font='bold 58px "Segoe UI"'; ctx.fillText('花火番長', W/2, 330);
@@ -701,7 +750,7 @@ function renderTitle(){
   ctx.fillStyle='#bcd'; ctx.font='14px "Segoe UI"';
   const info=[
     '玉がリングに届いた瞬間にタップ（レーンを押す）！',
-    'ドンピシャで「大輪」！ 金玉ドンピシャは星型花火☆',
+    'ドンピシャで最新花火！変化菊・八重芯・椰子・蜂・時差式…',
     '🟢⬇長押し玉=押しっぱなし→「はなせ！」で離すと しだれ柳',
     '🔥連打玉=光ってる間じゃんじゃん連打でスターマイン',
     '不発が続くと観客が帰っちゃうぞ（🏮×5）',
@@ -748,7 +797,7 @@ function loop(t){ const dt=lastT?Math.min(50,t-lastT):16; lastT=t;
       // フィナーレ演出（クリア時は連発花火）
       G.finale-=dt; G.finTick-=dt;
       if(G.cleared && G.finTick<=0){ G.finTick=200;
-        FW.blossom(40+Math.random()*(W-80), 100+Math.random()*220, 2+randi(3)); SFX.burst(2); }
+        FW.modern(40+Math.random()*(W-80), 100+Math.random()*220, rngPick(FW.MODERN_ALL), 2+randi(2)); SFX.burst(2); }
       if(G.finale<=0) finishToOver();
     } else update(dt);
   }
