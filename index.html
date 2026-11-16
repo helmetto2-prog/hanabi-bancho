@@ -43,6 +43,7 @@
         第二部『夜の打ち上げ』(Suno新曲・夜の踊り子風4つ打ちダンスロック)
    v05: 最新花火図鑑 = 八重芯変化菊・千輪菊・椰子・蜂・冠菊・時差式ストロボ・
         変色牡丹（色変化/多重リング/遅延千輪/ふらつき蜂/点滅を粒子エンジンに実装）
+   v06: タイトル画面を作り直し（大きなロゴ・打ち上がる見本花火・「あそびかた」の面）
    ========================================================================= */
 window.onerror = function(msg, src, line){ const b=document.getElementById('errbar');
   b.style.display='block'; b.textContent='ERR: '+msg+' (line '+line+')'; };
@@ -739,31 +740,125 @@ function overlay(title,col,sub){ ctx.fillStyle='rgba(0,0,0,0.68)'; ctx.fillRect(
   ctx.fillStyle=col; ctx.font='bold 40px "Segoe UI"'; ctx.fillText(title,W/2,H/2-10);
   ctx.fillStyle='#aaa'; ctx.font='15px "Segoe UI"'; ctx.fillText(sub,W/2,H/2+34); }
 
+// ── v06：タイトル画面を作り直し（大きなロゴ・打ち上がる見本花火・丸いスタートの帯・「あそびかた」の面）──
+//    説明の字の山はタイトルから外し、H キー／「あそびかた」ボタンで開く面へ移した（文はそのまま）。
+const TITLE_FONT='"Yu Gothic UI","Hiragino Sans","Meiryo","Segoe UI",sans-serif';
+let titleHelp=false, titleT0=0, titleShell=null, titleNextAt=0;
+const TITLE_HELP_BTN={ x:W/2-150, y:520, w:300, h:42 };            // 「あそびかた」ボタンの場所（キャンバス内の座標）
+const TITLE_INFO=[
+  '玉がリングに届いた瞬間にタップ（レーンを押す）！',
+  'ドンピシャで最新花火！変化菊・八重芯・椰子・蜂・時差式…',
+  '🟢⬇長押し玉=押しっぱなし→「はなせ！」で離すと しだれ柳',
+  '🔥連打玉=光ってる間じゃんじゃん連打でスターマイン',
+  '不発が続くと観客が帰っちゃうぞ（🏮×5）',
+  'ゲージMAXでスペース → 必殺・大玉スターマイン！',
+  '二部構成: ノリノリ→大スターマイン→夜のダンスグルーヴ',
+  '🎮 1 2 3 か ← ↓ → か A S D ／ スマホは画面3分割タップ',
+];
+function rrPath(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath(); }
+// ロゴ：太い字＋濃いふち＋白い細ふち＋たてのグラデーション（金→赤）＋光。maxW をこえる時は字を小さくする。
+function titleLogo(text,cx,y,size,maxW,t){
+  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.lineJoin='round';
+  ctx.font='900 '+size+'px '+TITLE_FONT;
+  const chars=[...text];
+  let ws=chars.map(ch=>ctx.measureText(ch).width), total=ws.reduce((p,q)=>p+q,0);
+  if(total>maxW){ size=Math.floor(size*maxW/total); ctx.font='900 '+size+'px '+TITLE_FONT;
+    ws=chars.map(ch=>ctx.measureText(ch).width); total=ws.reduce((p,q)=>p+q,0); }
+  let x=cx-total/2;
+  chars.forEach((ch,i)=>{
+    const e=Math.max(0,Math.min(1,(t-0.15-i*0.09)/0.45));                          // 1文字ずつ飛びこんでくる
+    const back=1+2.70158*Math.pow(e-1,3)+1.70158*Math.pow(e-1,2);
+    const bob=Math.sin(t*2.1-i*0.6)*4*e;                                             // そのあとは波うつ
+    ctx.save(); ctx.translate(x+ws[i]/2, y+bob-(1-e)*50); ctx.scale(back,back); ctx.globalAlpha=e;
+    ctx.shadowColor='rgba(255,150,50,0.95)'; ctx.shadowBlur=28;
+    ctx.strokeStyle='#3a0812'; ctx.lineWidth=Math.max(8,size*0.17); ctx.strokeText(ch,0,0);
+    ctx.shadowBlur=0;
+    ctx.strokeStyle='#ffffff'; ctx.lineWidth=Math.max(3,size*0.06); ctx.strokeText(ch,0,0);
+    const g=ctx.createLinearGradient(0,-size*0.9,0,size*0.12);
+    g.addColorStop(0,'#fff8d0'); g.addColorStop(0.45,'#ffd24a'); g.addColorStop(1,'#ff4a3c');
+    ctx.fillStyle=g; ctx.fillText(ch,0,0);
+    ctx.restore(); x+=ws[i]; });
+  ctx.restore();
+}
+// タイトルでのタップ／クリック。true を返したら「ここで受けた」（スタートはしない）
+function titleTap(x,y){
+  if(titleHelp){ titleHelp=false; return true; }                                    // あそびかたの面は、どこを押しても閉じる
+  const b=TITLE_HELP_BTN;
+  if(x>=b.x && x<=b.x+b.w && y>=b.y-8 && y<=b.y+b.h+8){ titleHelp=true; return true; }
+  return false;
+}
 function renderTitle(){
-  // タイトルの見本花火
-  if((clock()/1400|0)!==renderTitle._fw){ renderTitle._fw=clock()/1400|0;
-    FW.modern(90+Math.random()*300, 130+Math.random()*140, rngPick(FW.MODERN_ALL), 1+randi(2)); }
+  const cx=W/2, now=clock(); if(!titleT0) titleT0=now;
+  const t=(now-titleT0)/1000;
+  // タイトルの見本花火（玉がのぼって、てっぺんで開く）
+  if(!titleShell && now>=titleNextAt) titleShell={ x:LANE_X[randi(LANES)]+(Math.random()-0.5)*70, ty:110+Math.random()*120, t0:now };
+  if(titleShell){ const p=(now-titleShell.t0)/900;
+    if(p>=1){ FW.modern(titleShell.x, titleShell.ty, rngPick(FW.MODERN_ALL), 1+randi(2)); titleShell=null; titleNextAt=now+500; }
+    else { const y=lerp(BANK_Y-20, titleShell.ty, 1-(1-p)*(1-p)), x=titleShell.x;
+      ctx.save(); ctx.globalCompositeOperation='lighter';
+      ctx.strokeStyle='rgba(255,170,90,0.75)'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x,y+30); ctx.lineTo(x,y+6); ctx.stroke();
+      ctx.fillStyle='#ffcf9a'; ctx.beginPath(); ctx.arc(x,y,5,0,TAU); ctx.fill(); ctx.restore(); } }
   FW.draw();
+  if(titleHelp){ renderTitleHelp(); return; }
+  // 英字の小見出し
+  ctx.save(); ctx.textAlign='center'; ctx.font='bold 13px "Segoe UI",sans-serif'; ctx.fillStyle='rgba(255,215,150,0.9)';
+  { const s='HANABI BANCHO', step=14; [...s].forEach((ch,i)=>ctx.fillText(ch, cx-(s.length-1)*step/2+i*step, 250)); }
+  ctx.strokeStyle='rgba(255,215,150,0.45)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-200,245); ctx.lineTo(cx-104,245); ctx.moveTo(cx+104,245); ctx.lineTo(cx+200,245); ctx.stroke();
+  ctx.restore();
+  // ロゴ
+  titleLogo('花火番長', cx, 362, 100, W*0.86, t);
+  // ひとこと
+  ctx.save(); ctx.textAlign='center'; ctx.font='bold 17px '+TITLE_FONT;
+  ctx.lineJoin='round'; ctx.strokeStyle='rgba(10,8,24,0.8)'; ctx.lineWidth=4; ctx.strokeText('夜空にドンと咲かせろ！打ち上げ音ゲー', cx, 400);
+  ctx.fillStyle='#ffdca0'; ctx.fillText('夜空にドンと咲かせろ！打ち上げ音ゲー', cx, 400); ctx.restore();
   ctx.textAlign='center';
-  ctx.fillStyle='#ffd24a'; ctx.font='bold 58px "Segoe UI"'; ctx.fillText('花火番長', W/2, 330);
-  ctx.fillStyle='#ffca7a'; ctx.font='15px "Segoe UI"'; ctx.fillText('〜 夜空にドンと咲かせろ！打ち上げ音ゲー 〜', W/2, 362);
-  ctx.fillStyle='#bcd'; ctx.font='14px "Segoe UI"';
-  const info=[
-    '玉がリングに届いた瞬間にタップ（レーンを押す）！',
-    'ドンピシャで最新花火！変化菊・八重芯・椰子・蜂・時差式…',
-    '🟢⬇長押し玉=押しっぱなし→「はなせ！」で離すと しだれ柳',
-    '🔥連打玉=光ってる間じゃんじゃん連打でスターマイン',
-    '不発が続くと観客が帰っちゃうぞ（🏮×5）',
-    'ゲージMAXでスペース → 必殺・大玉スターマイン！',
-    '二部構成: ノリノリ→大スターマイン→夜のダンスグルーヴ',
-    '🎮 1 2 3 か ← ↓ → か A S D ／ スマホは画面3分割タップ',
-  ];
-  info.forEach((t,i)=>ctx.fillText(t, W/2, 404+i*23));
-  ctx.fillStyle='#8aa'; ctx.font='12px "Segoe UI"';
-  ctx.fillText('コラボ: うちわ番長 × 四天王 × ミドリウス × ずんだもん&めたん(声)', W/2, 600);
-  const blink=(clock()/500|0)%2===0;
-  ctx.fillStyle=blink?'#ffd24a':'#667'; ctx.font='bold 24px "Segoe UI"';
-  ctx.fillText('タップ / スペース でスタート', W/2, 760);
+  // 記録のふだ（自己ベスト）
+  { const best=Store.get(), s=best>0 ? '自己ベスト '+best.toLocaleString()+' 点' : '自己ベスト ― まだなし';
+    ctx.font='bold 13px '+TITLE_FONT; const w=ctx.measureText(s).width+28, x=cx-w/2, y=416;
+    rrPath(x,y,w,26,13); ctx.fillStyle='rgba(20,12,30,0.78)'; ctx.fill();
+    ctx.strokeStyle='rgba(255,210,74,0.55)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#ffe27a'; ctx.fillText(s, cx, y+18); }
+  // スタートの合図（ふわっと明滅する丸い帯）
+  { const p=0.5+0.5*Math.sin(t*3.2), w=400, h=54, x=cx-w/2, y=454;
+    ctx.save(); ctx.globalAlpha=0.76+0.24*p; ctx.shadowColor='rgba(255,170,60,0.9)'; ctx.shadowBlur=8+14*p;
+    rrPath(x,y,w,h,27); ctx.fillStyle='rgba(70,22,20,0.9)'; ctx.fill(); ctx.shadowBlur=0;
+    ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='900 22px '+TITLE_FONT;
+    ctx.fillText('▶  タップ ／ スペース でスタート', cx, y+35, w-30); ctx.restore(); }
+  // 「あそびかた」ボタン
+  { const b=TITLE_HELP_BTN;
+    rrPath(b.x,b.y,b.w,b.h,21); ctx.fillStyle='rgba(18,20,48,0.85)'; ctx.fill();
+    ctx.strokeStyle='rgba(255,157,226,0.7)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='#ffe0f2'; ctx.textAlign='center'; ctx.font='bold 17px '+TITLE_FONT;
+    ctx.fillText('？  あそびかた（H キー）', cx, b.y+28, b.w-24); }
+  // 操作の要点（小さく2行）
+  ctx.textAlign='center'; ctx.font='14px '+TITLE_FONT; ctx.fillStyle='rgba(200,212,232,0.9)';
+  ctx.fillText(TITLE_INFO[0], cx, 590, W-24);
+  ctx.fillText(TITLE_INFO[7], cx, 612, W-24);
+  ctx.fillStyle='#8aa'; ctx.font='11px '+TITLE_FONT;
+  ctx.fillText('コラボ: うちわ番長 × 四天王 × ミドリウス × ずんだもん&めたん(声)', cx, 636, W-24);
+}
+// v06：「あそびかた」の面（タイトルにあった説明の文をそのまま移した。H／Esc／タップ／クリックで閉じる）
+function renderTitleHelp(){
+  const cx=W/2;
+  ctx.save();
+  ctx.fillStyle='rgba(4,4,14,0.62)'; ctx.fillRect(0,0,W,H);
+  rrPath(16,104,W-32,540,22); ctx.fillStyle='rgba(18,12,30,0.93)'; ctx.fill();
+  ctx.strokeStyle='rgba(255,210,74,0.6)'; ctx.lineWidth=2; ctx.stroke();
+  ctx.textAlign='center';
+  ctx.font='900 30px '+TITLE_FONT; ctx.fillStyle='#ffd24a'; ctx.fillText('あそびかた', cx, 154);
+  ctx.strokeStyle='rgba(255,210,74,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(60,172); ctx.lineTo(W-60,172); ctx.stroke();
+  ctx.font='16px '+TITLE_FONT; ctx.fillStyle='#e4ecf6';
+  TITLE_INFO.forEach((s,i)=>ctx.fillText(s, cx, 212+i*42, W-56));
+  ctx.fillStyle='#8aa'; ctx.font='12px '+TITLE_FONT;
+  ctx.fillText('コラボ: うちわ番長 × 四天王 × ミドリウス × ずんだもん&めたん(声)', cx, 548, W-56);
+  { const w=380, h=42, x=cx-w/2, y=576;
+    rrPath(x,y,w,h,21); ctx.fillStyle='rgba(70,22,20,0.92)'; ctx.fill(); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='900 16px '+TITLE_FONT; ctx.fillText('とじる（タップ ／ H）　スペースでスタート', cx, y+27, w-24); }
+  ctx.restore();
 }
 function renderResult(){
   ctx.fillStyle='rgba(0,0,0,0.72)'; ctx.fillRect(0,0,W,H);
@@ -817,6 +912,9 @@ document.addEventListener('keyup', e=>{ if(KEY_LANE[e.code]!==undefined) release
 function onKey(code){
   if(code==='KeyM'){ SFX.toggle(); return; }
   if(code==='KeyR'){ startGame(); return; }
+  if(state==='title'){                                               // v06：タイトル画面を作り直し＝H で「あそびかた」を開け閉め
+    if(code==='KeyH'){ titleHelp=!titleHelp; return; }
+    if(code==='Escape' && titleHelp){ titleHelp=false; return; } }
   if(state==='title'||state==='over'){
     if((code==='Space'||code==='Enter') && !(state==='over' && clock()-overAt<800)) startGame(); return; }
   if(code==='KeyP'){ if(state==='play'||state==='pause') togglePause(); return; }
@@ -833,6 +931,7 @@ C.addEventListener('pointerdown', e=>{
   e.preventDefault(); SFX.ensure();
   const r=C.getBoundingClientRect();
   const x=(e.clientX-r.left)*W/r.width, y=(e.clientY-r.top)*H/r.height;
+  if(state==='title' && titleTap(x,y)) return;                       // v06：タイトル画面を作り直し＝「あそびかた」ボタン／面を閉じる
   if(state==='title'||state==='over'){
     if(!(state==='over' && clock()-overAt<800)) startGame(); return; }
   if(state==='pause'){ togglePause(); return; }
